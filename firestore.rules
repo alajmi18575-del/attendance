@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // غيّر البريد التالي إلى بريد المالك بأحرف صغيرة (نفس adminEmail في config.js)
+    function isOwner() {
+      return request.auth != null && request.auth.token.email.lower() == "PASTE_ADMIN_EMAIL";
+    }
+    function supPath() {
+      return /databases/$(database)/documents/supervisors/$(request.auth.token.email.lower());
+    }
+    function isSup() {
+      return request.auth != null && exists(supPath());
+    }
+    function mySite(site) {
+      return isSup() && site in get(supPath()).data.sites;
+    }
+
+    // المشرفون: المالك يدير الكل، والمشرف يقرأ سجله فقط
+    match /supervisors/{email} {
+      allow read: if isOwner() || (request.auth != null && request.auth.token.email.lower() == email);
+      allow write: if isOwner();
+    }
+
+    // الوافدون: المالك يرى ويعدّل الكل، المشرف يقرأ وافدي مواقعه فقط
+    match /people/{id} {
+      allow read: if isOwner() || mySite(resource.data.site);
+      allow write: if isOwner();
+    }
+
+    // الحضور (وثيقة لكل عامل في الشهر)
+    match /att/{id} {
+      allow read: if isOwner() || mySite(resource.data.site);
+      allow create: if isOwner() || mySite(request.resource.data.site);
+      allow update: if isOwner() || (mySite(resource.data.site) && request.resource.data.site == resource.data.site);
+      allow delete: if isOwner();
+    }
+
+    // الأعذار (إجازة / مرضية)
+    match /excuses/{id} {
+      allow read: if isOwner() || mySite(resource.data.site);
+      allow create: if isOwner() || mySite(request.resource.data.site);
+      allow update: if isOwner() || (mySite(resource.data.site) && request.resource.data.site == resource.data.site);
+      allow delete: if isOwner() || mySite(resource.data.site);
+    }
+  }
+}
